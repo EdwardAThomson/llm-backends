@@ -1,8 +1,12 @@
 """Wrapper for calling Gemini CLI from Python.
 
 Ported from StoryDaemon novel_agent/tools/gemini_cli_interface.py @ 9032e63f7508 (llm-backends extraction, stage 1).
+Stage 2 merged the analyzer's hardening (llm_creative_writing-analyser
+cli_backends/gemini_cli_interface.py @ 2fed1b0): subscription-billing
+key-stripping; plus NovelWriter's is_available() probe
+(core/generation/llm_interface/gemini_cli_interface.py).
 
-Provides a subprocess-based interface to the `gemini` CLI so StoryDaemon can
+Provides a subprocess-based interface to the `gemini` CLI so consuming apps can
 use Gemini models via the local tool, similar to the Codex CLI backend.
 """
 
@@ -10,6 +14,7 @@ import shutil
 import subprocess
 from typing import Optional
 
+from ._env import subprocess_env_without
 from .agent_cwd import neutral_cwd
 
 
@@ -17,7 +22,7 @@ class GeminiCliInterface:
     """Interface for calling Gemini CLI to access Gemini models."""
 
     def __init__(self, model: str = "gemini-3-flash-preview", gemini_bin: str = "gemini",
-                 default_timeout: int = 300):
+                 default_timeout: int = 300, strip_provider_keys: bool = True):
         """Initialize Gemini CLI interface.
 
         Args:
@@ -25,6 +30,12 @@ class GeminiCliInterface:
                 "gemini-3-flash-preview" (fast) or "gemini-3-pro-preview".
                 Note: the bare "gemini-3-flash"/"gemini-3-pro" names are NOT valid.
             gemini_bin: Path to `gemini` binary (default: "gemini" in PATH).
+            strip_provider_keys: When True (the default, assumption A4), strip
+                GEMINI_API_KEY and GOOGLE_API_KEY from the subprocess
+                environment so `gemini` authenticates via its own login default
+                instead of a metered API key inherited from the parent process.
+                Pass False to opt out and let the CLI see (and bill) the parent
+                environment's key.
 
         Raises:
             RuntimeError: If Gemini CLI is not installed or not in PATH.
@@ -32,6 +43,7 @@ class GeminiCliInterface:
         self.model = model
         self.gemini_bin = gemini_bin
         self.default_timeout = default_timeout
+        self.strip_provider_keys = strip_provider_keys
         self._verify_gemini_installed()
 
     def _verify_gemini_installed(self) -> None:
@@ -46,6 +58,18 @@ class GeminiCliInterface:
                 "Install it from https://github.com/google-gemini/gemini-cli and "
                 "ensure 'gemini' is on your PATH."
             )
+
+    @staticmethod
+    def is_available(gemini_bin: str = "gemini") -> bool:
+        """Check if Gemini CLI is available without raising an error.
+
+        Args:
+            gemini_bin: Path to gemini binary
+
+        Returns:
+            True if Gemini CLI is available, False otherwise
+        """
+        return shutil.which(gemini_bin) is not None
 
     def generate(self, prompt: str, max_tokens: int = 2000, timeout: Optional[int] = None) -> str:  # noqa: ARG002
         """Generate text using Gemini CLI.
@@ -66,6 +90,15 @@ class GeminiCliInterface:
             subprocess.TimeoutExpired: If generation times out.
         """
         eff_timeout = timeout or self.default_timeout
+        # Strip Gemini API keys so the CLI authenticates via its login default,
+        # not a metered key. GEMINI_API_KEY (and GOOGLE_API_KEY) from .env are
+        # pulled into os.environ by load_dotenv() in consuming apps and would
+        # otherwise be inherited here and billed instead of the subscription —
+        # an env-var key outranks the CLI's configured login default (the
+        # billing gotcha; see _env.py and assumption A4). env=None inherits the
+        # parent env untouched (opt-out).
+        env = (subprocess_env_without("GEMINI_API_KEY", "GOOGLE_API_KEY")
+               if self.strip_provider_keys else None)
         try:
             # Non-interactive call, similar to `gemini -p "..." -m <model>`
             result = subprocess.run(
@@ -84,6 +117,7 @@ class GeminiCliInterface:
                 text=True,
                 timeout=eff_timeout,
                 check=True,
+                env=env,
                 # Neutral cwd: `gemini` is also a repo-aware agent; keep it isolated.
                 cwd=neutral_cwd(),
             )

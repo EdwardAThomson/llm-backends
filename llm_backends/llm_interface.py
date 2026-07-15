@@ -1,6 +1,8 @@
-"""LLM interface for StoryDaemon.
+"""Backend-agnostic LLM interface for llm-backends.
 
 Ported from StoryDaemon novel_agent/tools/llm_interface.py @ 9032e63f7508 (llm-backends extraction, stage 1).
+Stage 2 added check_cli_availability(), ported from NovelWriter
+core/generation/llm_interface/llm_interface.py.
 
 Provides a backend-agnostic interface for LLM access.
 
@@ -130,3 +132,20 @@ def is_initialized() -> bool:
         True if initialized, False otherwise.
     """
     return _llm_client is not None
+
+
+def check_cli_availability() -> dict:
+    """Check which CLI backends are available on the system.
+
+    Static probes only (shutil.which on each binary): no subprocess is run and
+    no backend is initialized. Suitable for GUI dropdowns and preflight checks
+    (ported from NovelWriter, which feeds its backend picker with this).
+
+    Returns:
+        Dict mapping CLI backend names to availability status.
+    """
+    return {
+        "codex": CodexInterface.is_available(),
+        "gemini-cli": GeminiCliInterface.is_available(),
+        "claude-cli": ClaudeCliInterface.is_available(),
+    }

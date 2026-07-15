@@ -12,6 +12,9 @@ def test_neutral_cwd_idempotent_and_empty():
     assert d == neutral_cwd()  # same dir on every call (process-wide)
     p = Path(d)
     assert p.is_dir()
+    # Stage 2 de-branding: the scratch dir belongs to the package, not to
+    # StoryDaemon (the move-artifact prefix "storydaemon-agent-" is gone).
+    assert p.name.startswith("llm-backends-agent-")
     # The whole point: no repo/agent files for the CLI agent to latch onto.
     assert not (p / ".git").exists()
     assert not (p / "CLAUDE.md").exists()

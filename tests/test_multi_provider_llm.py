@@ -331,22 +331,30 @@ def test_initialize_llm_wires_timeout_into_api_backend():
 
 
 def test_clients_constructed_with_capped_sdk_retries(monkeypatch):
+    # The single-provider clients keep the tight internal-retry cap; the
+    # OpenRouter client is the deliberate exception (see the hardening test in
+    # test_registry_and_dispatch.py).
     class RetryAwareFakeOpenAI:
-        def __init__(self, base_url=None, api_key=None, max_retries=None):
-            self.base_url = base_url
+        def __init__(self, api_key=None, max_retries=None):
+            self.api_key = api_key
             self.max_retries = max_retries
 
     monkeypatch.setattr(multi_provider_llm, "OpenAI", RetryAwareFakeOpenAI)
-    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
 
-    client = multi_provider_llm._get_openrouter_client()
+    client = multi_provider_llm._get_openai_client()
 
     assert client.max_retries == multi_provider_llm.SDK_MAX_RETRIES
     assert multi_provider_llm.SDK_MAX_RETRIES == 1
 
 
 def test_construct_client_drops_kwarg_for_closed_constructors():
-    # The existing FakeOpenAI shape (no max_retries) must keep constructing:
-    # the retry cap is a nicety, never a break.
+    # The existing FakeOpenAI shape (no max_retries, no timeout) must keep
+    # constructing: the hardening kwargs are a nicety, never a break.
     built = multi_provider_llm._construct_client(FakeOpenAI, api_key="k")
+    assert isinstance(built, FakeOpenAI)
+
+    # Same with a client-level timeout requested: both hardening kwargs are
+    # dropped one by one for a closed constructor.
+    built = multi_provider_llm._construct_client(FakeOpenAI, timeout=120.0, api_key="k")
     assert isinstance(built, FakeOpenAI)

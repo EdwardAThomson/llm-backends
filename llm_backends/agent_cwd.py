@@ -3,10 +3,11 @@
 Ported from StoryDaemon novel_agent/tools/agent_cwd.py @ 9032e63f7508 (llm-backends extraction, stage 1).
 
 The `codex`, `claude` and `gemini` CLIs are full repo-aware *agents*, not completion
-APIs: run from the StoryDaemon repo they load agent instructions (CLAUDE.md / AGENTS.md)
-and the codebase and start *acting on the repo* instead of answering the prompt — they
-derail and time out (proven with `claude -p`). Running them from an empty scratch
-directory (no `.git`, no agent files, no source) keeps them pure text generators.
+APIs: run from a consuming project's repo they load agent instructions (CLAUDE.md /
+AGENTS.md) and the codebase and start *acting on the repo* instead of answering the
+prompt — they derail and time out (proven with `claude -p` in StoryDaemon). Running
+them from an empty scratch directory (no `.git`, no agent files, no source) keeps
+them pure text generators.
 
 This is deliberately backend-independent: every CLI backend runs from the *same* neutral
 cwd, created once per process.
@@ -22,5 +23,5 @@ def neutral_cwd() -> str:
     """Return a process-wide empty scratch directory for CLI-agent subprocesses."""
     global _neutral_cwd
     if _neutral_cwd is None:
-        _neutral_cwd = tempfile.mkdtemp(prefix="storydaemon-agent-")
+        _neutral_cwd = tempfile.mkdtemp(prefix="llm-backends-agent-")
     return _neutral_cwd
