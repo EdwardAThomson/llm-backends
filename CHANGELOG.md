@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.1 (2026-07-15)
+
+- Added `DEFAULT_API_MODEL` (`"gpt-5.5"`) to the public interface, with a
+  registry-membership test. Added for StoryDaemon's adoption (migration
+  step 2) so consumer CLI fallbacks read one authoritative default
+  instead of hardcoding model literals.
+
 ## 0.1.0 (2026-07-15)
 
 Stage 2 of the extraction plan (StoryDaemon `docs/LLM_BACKENDS_INVENTORY.md`

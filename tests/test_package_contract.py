@@ -71,6 +71,13 @@ def test_import_and_construct_without_provider_sdks():
     assert "LAZY_IMPORT_OK" in result.stdout
 
 
+def test_default_api_model_is_a_registry_key():
+    import llm_backends
+    from llm_backends import multi_provider_llm
+
+    assert llm_backends.DEFAULT_API_MODEL == "gpt-5.5" and llm_backends.DEFAULT_API_MODEL in multi_provider_llm._model_config
+
+
 def test_every_registry_key_maps_to_a_callable():
     from llm_backends import multi_provider_llm
 

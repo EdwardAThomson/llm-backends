@@ -41,9 +41,16 @@ from .multi_provider_llm import (
 
 __version__ = "0.1.0"
 
+# Canonical default API model. Consuming apps should read this instead of
+# hardcoding their own fallback literals (e.g. StoryDaemon's cli/main.py /
+# cli/commands/*.py "gpt-5.5" fallbacks), so a registry default bump is a
+# single-place change (inventory doc section 7.4, step 2).
+DEFAULT_API_MODEL = "gpt-5.5"
+
 __all__ = [
     "ClaudeCliInterface",
     "CodexInterface",
+    "DEFAULT_API_MODEL",
     "GeminiCliInterface",
     "LLMClient",
     "MODEL_ALIASES",

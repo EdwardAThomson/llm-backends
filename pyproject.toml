@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "llm-backends"
-version = "0.1.0"
+version = "0.1.1"
 description = "Shared multi-provider LLM backend layer (API providers + hardened CLI-agent backends), extracted from the StoryDaemon/analyzer/NovelWriter family."
 readme = "README.md"
 requires-python = ">=3.11"
