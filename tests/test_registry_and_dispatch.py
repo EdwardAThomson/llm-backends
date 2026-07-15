@@ -352,7 +352,7 @@ def test_anthropic_no_key_raises_with_canonical_name(monkeypatch):
 # ---- package surface ----------------------------------------------------------------
 
 def test_stage2_public_surface_and_version():
-    assert llm_backends.__version__ == "0.1.0"
+    assert llm_backends.__version__ == "0.1.1"
     assert llm_backends.resolve_model is resolve_model
     assert llm_backends.MODEL_ALIASES is MODEL_ALIASES
     assert callable(llm_backends.check_cli_availability)
