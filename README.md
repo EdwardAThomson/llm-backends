@@ -91,9 +91,11 @@ llm_interface.initialize_llm(backend="api", model="claude-sonnet-4-6", timeout=3
 text = llm_interface.send_prompt("...", max_tokens=200)
 
 # Model naming helpers:
-from llm_backends import get_supported_models, resolve_model
+from llm_backends import get_supported_models, resolve_model, DEFAULT_API_MODEL
 get_supported_models()                 # the registry primaries
 resolve_model("claude-4.5")            # legacy alias -> "claude-sonnet-4-5"
+DEFAULT_API_MODEL                      # canonical default API model key;
+                                       # read this instead of hardcoding a fallback
 
 # CLI-agent backends:
 from llm_backends import CodexInterface, check_cli_availability
