@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.2.0 (2026-07-28)
+
+### Headline behavior change: no system prompt unless one is asked for
+
+- Every API backend previously defaulted `role_description` to a
+  fiction-writing persona ("You are a helpful fiction writing assistant. You
+  will create original text only."), and the registry never forwarded the
+  parameter, so every call through `send_prompt()` shipped that persona with
+  no way for a caller to override it. Wrong for any non-fiction consumer, and
+  actively harmful for a coding agent ("create original text only" presents
+  as mysterious refusals rather than an obvious misconfiguration).
+- `role_description` now defaults to `None` on all five API backends: no
+  system prompt at all, not a neutral replacement. OpenAI-shaped backends
+  omit the system turn; Anthropic omits the `system` kwarg (the API rejects
+  `system=None`); Gemini gained `system_instruction` (it previously accepted
+  no system prompt, so the same registry call behaved differently there).
+- The 20 registry lambdas, `send_prompt`, `send_prompt_meta`, and
+  `send_prompt_with_retry` all accept and forward `role_description`.
+- `FICTION_ROLE` is exported so callers wanting the old behavior restore it
+  in one line: `send_prompt(..., role_description=FICTION_ROLE)`.
+- **Adopters:** consumers whose facades pass `role_description` explicitly
+  (NovelWriter, the analyzer, PIT, CryptoAlertBot) are unaffected. Consumers
+  relying on the old implicit default must now opt in.
+
+### Singleton-path plumbing for the persona opt-in
+
+- `MultiProviderInterface` accepts an instance-level `role_description`
+  (default `None`) and forwards it from `generate`, `generate_with_meta`,
+  and `generate_with_retry`.
+- `initialize_llm(...)` accepts `role_description` and wires it into the api
+  backend, so singleton-path callers (StoryDaemon) opt back in with
+  `initialize_llm(backend="api", role_description=FICTION_ROLE)`. Passing it
+  with a CLI backend raises RuntimeError instead of dropping it silently
+  (CLI backends have no system-prompt concept).
+
 ## 0.1.1 (2026-07-15)
 
 - Added `DEFAULT_API_MODEL` (`"gpt-5.5"`) to the public interface, with a

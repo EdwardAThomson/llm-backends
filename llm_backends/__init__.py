@@ -40,7 +40,7 @@ from .multi_provider_llm import (
     resolve_model,
 )
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 # Canonical default API model. Consuming apps should read this instead of
 # hardcoding their own fallback literals (e.g. StoryDaemon's cli/main.py /

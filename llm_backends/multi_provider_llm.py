@@ -913,6 +913,7 @@ def send_prompt_with_retry(
     max_tokens: int = 2000,
     max_retries: int = 3,
     timeout: Optional[float] = None,
+    role_description: Optional[str] = None,
 ) -> str:
     """Send a prompt with simple retry logic on failure."""
     last_error: Optional[Exception] = None
@@ -920,7 +921,8 @@ def send_prompt_with_retry(
     for attempt in range(max_retries):
         try:
             return send_prompt(prompt, model=model, max_tokens=max_tokens,
-                               timeout=timeout)
+                               timeout=timeout,
+                               role_description=role_description)
         except Exception as e:  # noqa: BLE001
             last_error = e
             if attempt < max_retries - 1:
@@ -944,11 +946,20 @@ class MultiProviderInterface:
     inert on the whole api backend and the SDK defaults governed a 22.4-minute
     hang). initialize_llm wires it from ``llm.timeout``; a per-call timeout
     argument overrides the instance default; None means SDK defaults.
+
+    ``role_description`` is the instance-level system prompt applied to every
+    call; None (the default) sends none. This is the only system-prompt knob on
+    the singleton llm_interface path, whose send_prompt() takes no
+    role_description parameter, so callers on that path (StoryDaemon) opt back
+    into a persona here, e.g.
+    initialize_llm(backend="api", role_description=FICTION_ROLE).
     """
 
-    def __init__(self, model: str = "gpt-5.5", timeout: Optional[float] = None):
+    def __init__(self, model: str = "gpt-5.5", timeout: Optional[float] = None,
+                 role_description: Optional[str] = None):
         self.model = model
         self.timeout = timeout
+        self.role_description = role_description
 
     def _effective_timeout(self, timeout: Optional[float]) -> Optional[float]:
         return timeout if timeout is not None else self.timeout
@@ -956,7 +967,8 @@ class MultiProviderInterface:
     def generate(self, prompt: str, max_tokens: int = 2000,
                  timeout: Optional[float] = None) -> str:
         return send_prompt(prompt, model=self.model, max_tokens=max_tokens,
-                           timeout=self._effective_timeout(timeout))
+                           timeout=self._effective_timeout(timeout),
+                           role_description=self.role_description)
 
     def generate_with_meta(
         self, prompt: str, max_tokens: int = 2000, timeout: Optional[float] = None
@@ -970,7 +982,8 @@ class MultiProviderInterface:
         this method, so everything degrades to the completion heuristic.
         """
         return send_prompt_meta(prompt, model=self.model, max_tokens=max_tokens,
-                                timeout=self._effective_timeout(timeout))
+                                timeout=self._effective_timeout(timeout),
+                                role_description=self.role_description)
 
     def generate_with_retry(
         self,
@@ -985,4 +998,5 @@ class MultiProviderInterface:
             max_tokens=max_tokens,
             max_retries=max_retries,
             timeout=self._effective_timeout(timeout),
+            role_description=self.role_description,
         )

@@ -36,6 +36,7 @@ def initialize_llm(
     codex_bin: str = "codex",
     model: str = "gpt-5.5",
     timeout: Optional[int] = None,
+    role_description: Optional[str] = None,
 ) -> LLMClient:
     """Initialize the LLM client for the given backend.
 
@@ -47,23 +48,39 @@ def initialize_llm(
             backends' subprocess timeout and the api backend's per-request HTTP
             timeout (previously inert there, docs/progress_report_20260712.md
             section 8.1). Falls back to 300 when unset, same as the CLI backends.
+        role_description: System prompt applied to every call on the api
+            backend; None (the default) sends none. This is the singleton
+            path's only system-prompt knob (send_prompt() below takes no such
+            parameter), added so callers that want the pre-0.2.0 persona can
+            opt back in: initialize_llm(backend="api",
+            role_description=FICTION_ROLE). The CLI backends drive coding
+            agents with no system-prompt concept.
 
     Returns:
         An initialized LLM client instance.
 
     Raises:
-        RuntimeError: If the requested backend cannot be initialized.
+        RuntimeError: If the requested backend cannot be initialized, or if
+            role_description is passed with a CLI backend (it would be
+            dropped silently otherwise).
     """
     global _llm_client
 
     backend_normalized = backend.lower().strip()
+
+    if role_description is not None and backend_normalized not in {"api", "openai"}:
+        raise RuntimeError(
+            f"role_description is only supported on the 'api' backend, not '{backend}'. "
+            "The CLI backends have no system-prompt concept."
+        )
 
     if backend_normalized == "codex":
         _llm_client = CodexInterface(codex_bin, default_timeout=timeout or 300)
     elif backend_normalized in {"api", "openai"}:
         # "openai" kept for backward compatibility; it now means
         # "use the API backend" with the configured model.
-        _llm_client = MultiProviderInterface(model=model, timeout=timeout or 300)
+        _llm_client = MultiProviderInterface(model=model, timeout=timeout or 300,
+                                             role_description=role_description)
     elif backend_normalized in {"gemini-cli", "gemini"}:
         _llm_client = GeminiCliInterface(model=model, default_timeout=timeout or 300)
     elif backend_normalized in {"claude-cli", "claude"}:

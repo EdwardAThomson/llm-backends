@@ -153,3 +153,63 @@ def test_full_entry_receives_both():
 
     assert _call_model_fn(full, "p", 10, 30, "a role") == "ok"
     assert seen == {"timeout": 30, "role_description": "a role"}
+
+
+# ---- singleton-path plumbing (0.2.0) ----------------------------------------------
+#
+# The singleton llm_interface path (StoryDaemon) has no per-call role parameter,
+# so the opt-in lives on the client instance and rides initialize_llm.
+
+
+def test_multi_provider_interface_forwards_instance_role(monkeypatch):
+    client = _CapturingChatClient()
+    monkeypatch.setattr(multi_provider_llm, "_get_openrouter_client", lambda: client)
+
+    iface = multi_provider_llm.MultiProviderInterface(
+        model="openrouter:x/y", role_description=FICTION_ROLE
+    )
+    iface.generate("hi")
+
+    assert client.captured["messages"][0] == {
+        "role": "system",
+        "content": FICTION_ROLE,
+    }
+
+
+def test_multi_provider_interface_defaults_to_no_role(monkeypatch):
+    client = _CapturingChatClient()
+    monkeypatch.setattr(multi_provider_llm, "_get_openrouter_client", lambda: client)
+
+    multi_provider_llm.MultiProviderInterface(model="openrouter:x/y").generate("hi")
+
+    assert _roles(client.captured) == ["user"]
+
+
+def test_multi_provider_interface_retry_forwards_role(monkeypatch):
+    client = _CapturingChatClient()
+    monkeypatch.setattr(multi_provider_llm, "_get_openrouter_client", lambda: client)
+
+    iface = multi_provider_llm.MultiProviderInterface(
+        model="openrouter:x/y", role_description="be terse"
+    )
+    iface.generate_with_retry("hi")
+
+    assert client.captured["messages"][0]["content"] == "be terse"
+
+
+def test_initialize_llm_wires_role_into_api_backend():
+    from llm_backends import llm_interface
+
+    client = llm_interface.initialize_llm(
+        backend="api", model="gpt-5.5", role_description=FICTION_ROLE
+    )
+
+    assert isinstance(client, multi_provider_llm.MultiProviderInterface)
+    assert client.role_description == FICTION_ROLE
+
+
+def test_initialize_llm_rejects_role_on_cli_backends():
+    from llm_backends import llm_interface
+
+    with pytest.raises(RuntimeError, match="role_description"):
+        llm_interface.initialize_llm(backend="codex", role_description=FICTION_ROLE)
