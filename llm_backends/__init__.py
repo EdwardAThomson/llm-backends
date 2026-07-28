@@ -33,6 +33,7 @@ from .llm_interface import (
     is_initialized,
 )
 from .multi_provider_llm import (
+    FICTION_ROLE,
     MODEL_ALIASES,
     MultiProviderInterface,
     get_supported_models,
@@ -48,6 +49,7 @@ __version__ = "0.1.1"
 DEFAULT_API_MODEL = "gpt-5.5"
 
 __all__ = [
+    "FICTION_ROLE",
     "ClaudeCliInterface",
     "CodexInterface",
     "DEFAULT_API_MODEL",

@@ -366,14 +366,36 @@ def _gemini_finish_reason(response) -> Optional[str]:
 # segment loop, and keeps its original text-only function (contract unchanged)
 # as a thin wrapper.
 
+# The system prompt this package used to send unconditionally. Kept as an
+# explicit constant so callers that *want* it (StoryDaemon, the creative-writing
+# analyser) restore it in one line: send_prompt(..., role_description=FICTION_ROLE).
+FICTION_ROLE = (
+    "You are a helpful fiction writing assistant. You will create original text only."
+)
+
+
+def _messages(role_description, prompt):
+    """OpenAI-shaped message list, omitting the system turn when there is none.
+
+    A system prompt is now opt-in. Sending a persona nobody asked for is worse
+    than sending none: this package previously defaulted every backend to a
+    fiction-writing role, which silently prefixed every non-fiction caller --
+    and "you will create original text only" is actively wrong for, say, a
+    coding agent that must reproduce existing files.
+    """
+    msgs = []
+    if role_description is not None:
+        msgs.append({"role": "system", "content": role_description})
+    msgs.append({"role": "user", "content": prompt})
+    return msgs
+
+
 def send_prompt_hosted_llm_meta(
     prompt: str,
     model: str = "",
     max_tokens: int = 2000,
     temperature: float = 0.7,
-    role_description: str = (
-        "You are a helpful fiction writing assistant. You will create original text only."
-    ),
+    role_description: Optional[str] = None,
     timeout: Optional[float] = None,
 ) -> Tuple[str, Optional[str]]:
     """Send a prompt to a self-hosted, OpenAI-compatible chat endpoint.
@@ -392,10 +414,7 @@ def send_prompt_hosted_llm_meta(
         client.chat.completions.create,
         {"timeout": timeout} if timeout is not None else None,
         model=model,
-        messages=[
-            {"role": "system", "content": role_description},
-            {"role": "user", "content": prompt},
-        ],
+        messages=_messages(role_description, prompt),
         max_tokens=max_tokens,
         temperature=temperature,
         # Disable "thinking" for more deterministic output (only honored by hosts
@@ -415,9 +434,7 @@ def send_prompt_openrouter_meta(
     model: str = "",
     max_tokens: int = 2000,
     temperature: float = 0.7,
-    role_description: str = (
-        "You are a helpful fiction writing assistant. You will create original text only."
-    ),
+    role_description: Optional[str] = None,
     timeout: Optional[float] = None,
 ) -> Tuple[str, Optional[str]]:
     """Send a prompt to OpenRouter, a hosted OpenAI-compatible router over many models.
@@ -437,10 +454,7 @@ def send_prompt_openrouter_meta(
         client.chat.completions.create,
         {"timeout": timeout} if timeout is not None else None,
         model=model,
-        messages=[
-            {"role": "system", "content": role_description},
-            {"role": "user", "content": prompt},
-        ],
+        messages=_messages(role_description, prompt),
         max_tokens=max_tokens,
         temperature=temperature,
         # Note: unlike hosted-llm, no provider-specific extra_body is set here.
@@ -461,9 +475,7 @@ def send_prompt_venice_meta(
     model: str = "",
     max_tokens: int = 2000,
     temperature: float = 0.7,
-    role_description: str = (
-        "You are a helpful fiction writing assistant. You will create original text only."
-    ),
+    role_description: Optional[str] = None,
     timeout: Optional[float] = None,
 ) -> Tuple[str, Optional[str]]:
     """Send a prompt to Venice (https://venice.ai), an OpenAI-compatible host.
@@ -482,10 +494,7 @@ def send_prompt_venice_meta(
         client.chat.completions.create,
         {"timeout": timeout} if timeout is not None else None,
         model=model,
-        messages=[
-            {"role": "system", "content": role_description},
-            {"role": "user", "content": prompt},
-        ],
+        messages=_messages(role_description, prompt),
         max_tokens=max_tokens,
         temperature=temperature,
         # Venice injects its own default system prompt unless told not to; this
@@ -507,9 +516,7 @@ def send_prompt_openai_meta(
     model: str = "gpt-5.5",
     max_tokens: int = 2000,
     temperature: float = 0.7,
-    role_description: str = (
-        "You are a helpful fiction writing assistant. You will create original text only."
-    ),
+    role_description: Optional[str] = None,
     timeout: Optional[float] = None,
     reasoning_effort: Optional[str] = None,
 ) -> Tuple[str, Optional[str]]:
@@ -528,10 +535,7 @@ def send_prompt_openai_meta(
         client.chat.completions.create,
         {"timeout": timeout} if timeout is not None else None,
         model=model,
-        messages=[
-            {"role": "system", "content": role_description},
-            {"role": "user", "content": prompt},
-        ],
+        messages=_messages(role_description, prompt),
         max_tokens=max_tokens,
         temperature=temperature,
         **extra_kwargs,
@@ -549,14 +553,21 @@ def send_prompt_gemini_meta(
     model_name: str = "gemini-2.5-pro",
     max_output_tokens: int = 2048,
     temperature: float = 0.9,
+    role_description: Optional[str] = None,
     timeout: Optional[float] = None,
 ) -> Tuple[str, Optional[str]]:
     """Send a prompt to the Gemini API. Returns (text, finish_reason).
 
     ``timeout`` (seconds) rides ``request_options``; None keeps the SDK default.
+    ``role_description`` rides ``system_instruction``; None sends none. Gemini
+    previously accepted no system prompt at all, so the same registry call
+    behaved differently here than on every other backend.
     """
     _ensure_gemini_configured()
-    model = genai.GenerativeModel(model_name)
+    model_kwargs = {}
+    if role_description is not None:
+        model_kwargs["system_instruction"] = role_description
+    model = genai.GenerativeModel(model_name, **model_kwargs)
     response = _call_with_timeout(
         model.generate_content,
         {"request_options": {"timeout": timeout}} if timeout is not None else None,
@@ -580,9 +591,7 @@ def send_prompt_claude_meta(
     model: str = "claude-sonnet-4-5-20250929",
     max_tokens: int = 4096,
     temperature: Optional[float] = 0.7,
-    role_description: str = (
-        "You are a skilled creative writer focused on producing original fiction."
-    ),
+    role_description: Optional[str] = None,
     timeout: Optional[float] = None,
 ) -> Tuple[str, Optional[str]]:
     """Send a prompt to Anthropic Claude. Returns (text, finish_reason).
@@ -598,9 +607,11 @@ def send_prompt_claude_meta(
     create_kwargs = dict(
         model=model,
         max_tokens=max_tokens,
-        system=role_description,
         messages=[{"role": "user", "content": prompt}],
     )
+    # Anthropic rejects system=None; the param must be absent, not null.
+    if role_description is not None:
+        create_kwargs["system"] = role_description
     if temperature is not None:
         create_kwargs["temperature"] = temperature
     response = _call_with_timeout(
@@ -638,77 +649,77 @@ ModelMetaFn = Callable[..., Tuple[str, Optional[str]]]
 # additionally keeps gpt-5.5 fallback literals in cli/main.py / commands/*.py.
 _model_config_meta: Dict[str, ModelMetaFn] = {
     # Self-hosted, OpenAI-compatible endpoint (configured via HOSTED_LLM_* env vars)
-    "hosted-llm": lambda prompt, max_tokens, timeout=None: send_prompt_hosted_llm_meta(
-        prompt=prompt, max_tokens=max_tokens, timeout=timeout,
+    "hosted-llm": lambda prompt, max_tokens, timeout=None, role_description=None: send_prompt_hosted_llm_meta(
+        prompt=prompt, max_tokens=max_tokens, timeout=timeout, role_description=role_description,
     ),
     # OpenRouter, a hosted OpenAI-compatible router over many models (configured via OPENROUTER_* env vars)
-    "openrouter": lambda prompt, max_tokens, timeout=None: send_prompt_openrouter_meta(
-        prompt=prompt, max_tokens=max_tokens, timeout=timeout,
+    "openrouter": lambda prompt, max_tokens, timeout=None, role_description=None: send_prompt_openrouter_meta(
+        prompt=prompt, max_tokens=max_tokens, timeout=timeout, role_description=role_description,
     ),
     # Venice, an OpenAI-compatible host of open-weight/uncensored models (configured via VENICE_* env vars)
-    "venice": lambda prompt, max_tokens, timeout=None: send_prompt_venice_meta(
-        prompt=prompt, max_tokens=max_tokens, timeout=timeout,
+    "venice": lambda prompt, max_tokens, timeout=None, role_description=None: send_prompt_venice_meta(
+        prompt=prompt, max_tokens=max_tokens, timeout=timeout, role_description=role_description,
     ),
     # OpenAI GPT-5 family
-    "gpt-5.5": lambda prompt, max_tokens, timeout=None: send_prompt_openai_meta(
-        prompt=prompt, model="gpt-5.5", max_tokens=max_tokens, timeout=timeout,
+    "gpt-5.5": lambda prompt, max_tokens, timeout=None, role_description=None: send_prompt_openai_meta(
+        prompt=prompt, model="gpt-5.5", max_tokens=max_tokens, timeout=timeout, role_description=role_description,
     ),
-    "gpt-5.4": lambda prompt, max_tokens, timeout=None: send_prompt_openai_meta(
-        prompt=prompt, model="gpt-5.4", max_tokens=max_tokens, timeout=timeout,
+    "gpt-5.4": lambda prompt, max_tokens, timeout=None, role_description=None: send_prompt_openai_meta(
+        prompt=prompt, model="gpt-5.4", max_tokens=max_tokens, timeout=timeout, role_description=role_description,
     ),
-    "gpt-5.4-mini": lambda prompt, max_tokens, timeout=None: send_prompt_openai_meta(
-        prompt=prompt, model="gpt-5.4-mini", max_tokens=max_tokens, timeout=timeout,
+    "gpt-5.4-mini": lambda prompt, max_tokens, timeout=None, role_description=None: send_prompt_openai_meta(
+        prompt=prompt, model="gpt-5.4-mini", max_tokens=max_tokens, timeout=timeout, role_description=role_description,
     ),
-    "gpt-5.2": lambda prompt, max_tokens, timeout=None: send_prompt_openai_meta(
-        prompt=prompt, model="gpt-5.2", max_tokens=max_tokens, timeout=timeout,
+    "gpt-5.2": lambda prompt, max_tokens, timeout=None, role_description=None: send_prompt_openai_meta(
+        prompt=prompt, model="gpt-5.2", max_tokens=max_tokens, timeout=timeout, role_description=role_description,
     ),
     # Anthropic Claude family. Fable 5 and Opus 4.8 reject the sampling params
     # (analyzer ai_helper.py:144-148): temperature=None omits the param so the
     # request doesn't 400; those models use their own sampling default.
-    "claude-fable-5": lambda prompt, max_tokens, timeout=None: send_prompt_claude_meta(
-        prompt=prompt, model="claude-fable-5", max_tokens=max_tokens, temperature=None, timeout=timeout,
+    "claude-fable-5": lambda prompt, max_tokens, timeout=None, role_description=None: send_prompt_claude_meta(
+        prompt=prompt, model="claude-fable-5", max_tokens=max_tokens, temperature=None, timeout=timeout, role_description=role_description,
     ),
-    "claude-opus-4-8": lambda prompt, max_tokens, timeout=None: send_prompt_claude_meta(
-        prompt=prompt, model="claude-opus-4-8", max_tokens=max_tokens, temperature=None, timeout=timeout,
+    "claude-opus-4-8": lambda prompt, max_tokens, timeout=None, role_description=None: send_prompt_claude_meta(
+        prompt=prompt, model="claude-opus-4-8", max_tokens=max_tokens, temperature=None, timeout=timeout, role_description=role_description,
     ),
-    "claude-sonnet-4-6": lambda prompt, max_tokens, timeout=None: send_prompt_claude_meta(
-        prompt=prompt, model="claude-sonnet-4-6", max_tokens=max_tokens, timeout=timeout,
+    "claude-sonnet-4-6": lambda prompt, max_tokens, timeout=None, role_description=None: send_prompt_claude_meta(
+        prompt=prompt, model="claude-sonnet-4-6", max_tokens=max_tokens, timeout=timeout, role_description=role_description,
     ),
     # Kept for StoryDaemon continuity (its pinned Sonnet 4.5 snapshot); the SD
     # spellings "claude-sonnet-4.5" / "claude-4.5" alias here.
-    "claude-sonnet-4-5": lambda prompt, max_tokens, timeout=None: send_prompt_claude_meta(
-        prompt=prompt, model="claude-sonnet-4-5-20250929", max_tokens=max_tokens, timeout=timeout,
+    "claude-sonnet-4-5": lambda prompt, max_tokens, timeout=None, role_description=None: send_prompt_claude_meta(
+        prompt=prompt, model="claude-sonnet-4-5-20250929", max_tokens=max_tokens, timeout=timeout, role_description=role_description,
     ),
-    "claude-haiku-4-5": lambda prompt, max_tokens, timeout=None: send_prompt_claude_meta(
-        prompt=prompt, model="claude-haiku-4-5", max_tokens=max_tokens, timeout=timeout,
+    "claude-haiku-4-5": lambda prompt, max_tokens, timeout=None, role_description=None: send_prompt_claude_meta(
+        prompt=prompt, model="claude-haiku-4-5", max_tokens=max_tokens, timeout=timeout, role_description=role_description,
     ),
     # Google Gemini
-    "gemini-3.1-pro-preview": lambda prompt, max_tokens, timeout=None: send_prompt_gemini_meta(
-        prompt=prompt, model_name="gemini-3.1-pro-preview", max_output_tokens=max_tokens, timeout=timeout,
+    "gemini-3.1-pro-preview": lambda prompt, max_tokens, timeout=None, role_description=None: send_prompt_gemini_meta(
+        prompt=prompt, model_name="gemini-3.1-pro-preview", max_output_tokens=max_tokens, timeout=timeout, role_description=role_description,
     ),
-    "gemini-3.1-flash-preview": lambda prompt, max_tokens, timeout=None: send_prompt_gemini_meta(
-        prompt=prompt, model_name="gemini-3.1-flash-preview", max_output_tokens=max_tokens, timeout=timeout,
+    "gemini-3.1-flash-preview": lambda prompt, max_tokens, timeout=None, role_description=None: send_prompt_gemini_meta(
+        prompt=prompt, model_name="gemini-3.1-flash-preview", max_output_tokens=max_tokens, timeout=timeout, role_description=role_description,
     ),
-    "gemini-3-pro-preview": lambda prompt, max_tokens, timeout=None: send_prompt_gemini_meta(
-        prompt=prompt, model_name="gemini-3-pro-preview", max_output_tokens=max_tokens, timeout=timeout,
+    "gemini-3-pro-preview": lambda prompt, max_tokens, timeout=None, role_description=None: send_prompt_gemini_meta(
+        prompt=prompt, model_name="gemini-3-pro-preview", max_output_tokens=max_tokens, timeout=timeout, role_description=role_description,
     ),
-    "gemini-3-flash-preview": lambda prompt, max_tokens, timeout=None: send_prompt_gemini_meta(
-        prompt=prompt, model_name="gemini-3-flash-preview", max_output_tokens=max_tokens, timeout=timeout,
+    "gemini-3-flash-preview": lambda prompt, max_tokens, timeout=None, role_description=None: send_prompt_gemini_meta(
+        prompt=prompt, model_name="gemini-3-flash-preview", max_output_tokens=max_tokens, timeout=timeout, role_description=role_description,
     ),
-    "gemini-2.5-pro": lambda prompt, max_tokens, timeout=None: send_prompt_gemini_meta(
-        prompt=prompt, model_name="gemini-2.5-pro", max_output_tokens=max_tokens, timeout=timeout,
+    "gemini-2.5-pro": lambda prompt, max_tokens, timeout=None, role_description=None: send_prompt_gemini_meta(
+        prompt=prompt, model_name="gemini-2.5-pro", max_output_tokens=max_tokens, timeout=timeout, role_description=role_description,
     ),
-    "gemini-2.5-flash": lambda prompt, max_tokens, timeout=None: send_prompt_gemini_meta(
-        prompt=prompt, model_name="gemini-2.5-flash", max_output_tokens=max_tokens, timeout=timeout,
+    "gemini-2.5-flash": lambda prompt, max_tokens, timeout=None, role_description=None: send_prompt_gemini_meta(
+        prompt=prompt, model_name="gemini-2.5-flash", max_output_tokens=max_tokens, timeout=timeout, role_description=role_description,
     ),
     # OpenRouter convenience keys (analyzer ai_helper.py:150-158). For any other
     # OpenRouter model, use the "openrouter:<upstream-model-id>" passthrough form
     # handled in send_prompt/send_prompt_meta instead of adding a new key here.
-    "openrouter-deepseek": lambda prompt, max_tokens, timeout=None: send_prompt_openrouter_meta(
-        prompt=prompt, model="deepseek/deepseek-chat", max_tokens=max_tokens, timeout=timeout,
+    "openrouter-deepseek": lambda prompt, max_tokens, timeout=None, role_description=None: send_prompt_openrouter_meta(
+        prompt=prompt, model="deepseek/deepseek-chat", max_tokens=max_tokens, timeout=timeout, role_description=role_description,
     ),
-    "openrouter-haiku": lambda prompt, max_tokens, timeout=None: send_prompt_openrouter_meta(
-        prompt=prompt, model="anthropic/claude-haiku-4.5", max_tokens=max_tokens, timeout=timeout,
+    "openrouter-haiku": lambda prompt, max_tokens, timeout=None, role_description=None: send_prompt_openrouter_meta(
+        prompt=prompt, model="anthropic/claude-haiku-4.5", max_tokens=max_tokens, timeout=timeout, role_description=role_description,
     ),
 }
 
@@ -729,27 +740,40 @@ MODEL_ALIASES: Dict[str, str] = {
 }
 
 
-def _call_model_fn(fn, prompt: str, max_tokens: int, timeout: Optional[float]):
-    """Invoke a registry entry, forwarding the timeout only when one is set.
+def _call_model_fn(fn, prompt: str, max_tokens: int, timeout: Optional[float],
+                   role_description: Optional[str] = None):
+    """Invoke a registry entry, forwarding optional kwargs only when set.
 
-    Callers without a timeout keep the exact positional (prompt, max_tokens)
-    contract (tests and older code monkeypatch two-arg entries into the
-    registries); an entry that rejects the timeout kwarg degrades to the
-    timeout-less call rather than breaking (same graceful rule as
+    Callers without a timeout or role keep the exact positional
+    (prompt, max_tokens) contract (tests and older code monkeypatch two-arg
+    entries into the registries); an entry that rejects either kwarg degrades
+    to a call without it rather than breaking (same graceful rule as
     _call_with_timeout).
+
+    Degradation is per-kwarg and ordered most-specific-first, so a two-arg
+    monkeypatched entry still works and a timeout-only entry does not silently
+    lose its timeout when a role is also supplied.
     """
+    attempts = []
+    if timeout is not None and role_description is not None:
+        attempts.append({"timeout": timeout, "role_description": role_description})
+    if role_description is not None:
+        attempts.append({"role_description": role_description})
     if timeout is not None:
+        attempts.append({"timeout": timeout})
+    for kwargs in attempts:
         try:
-            return fn(prompt, max_tokens, timeout=timeout)
+            return fn(prompt, max_tokens, **kwargs)
         except TypeError:
-            pass
+            continue
     return fn(prompt, max_tokens)
 
 
 def _text_only(meta_fn: ModelMetaFn) -> ModelFn:
     """Adapt a (text, finish_reason) model function to the text-only contract."""
-    def call(prompt: str, max_tokens: int, timeout: Optional[float] = None) -> str:
-        return _call_model_fn(meta_fn, prompt, max_tokens, timeout)[0]
+    def call(prompt: str, max_tokens: int, timeout: Optional[float] = None,
+             role_description: Optional[str] = None) -> str:
+        return _call_model_fn(meta_fn, prompt, max_tokens, timeout, role_description)[0]
     return call
 
 
@@ -827,6 +851,7 @@ def send_prompt(
     model: str = "gpt-5.5",
     max_tokens: int = 2000,
     timeout: Optional[float] = None,
+    role_description: Optional[str] = None,
 ) -> str:
     """Send a prompt using the configured model registry.
 
@@ -838,10 +863,12 @@ def send_prompt(
     """
     if model.startswith(OPENROUTER_PREFIX):
         return send_prompt_meta(prompt, model=model, max_tokens=max_tokens,
-                                timeout=timeout)[0]
+                                timeout=timeout,
+                                role_description=role_description)[0]
     model = _resolve_model_key(model, _model_config)
     try:
-        return _call_model_fn(_model_config[model], prompt, max_tokens, timeout)
+        return _call_model_fn(_model_config[model], prompt, max_tokens, timeout,
+                              role_description)
     except Exception as e:  # noqa: BLE001 - we want a simple wrapper
         raise RuntimeError(f"Error calling model '{model}': {e}") from e
 
@@ -851,6 +878,7 @@ def send_prompt_meta(
     model: str = "gpt-5.5",
     max_tokens: int = 2000,
     timeout: Optional[float] = None,
+    role_description: Optional[str] = None,
 ) -> Tuple[str, Optional[str]]:
     """Send a prompt and return (text, finish_reason).
 
@@ -867,13 +895,14 @@ def send_prompt_meta(
         try:
             return send_prompt_openrouter_meta(
                 prompt=prompt, model=upstream_model, max_tokens=max_tokens,
-                timeout=timeout,
+                timeout=timeout, role_description=role_description,
             )
         except Exception as e:  # noqa: BLE001 - we want a simple wrapper
             raise RuntimeError(f"Error calling model '{model}': {e}") from e
     model = _resolve_model_key(model, _model_config_meta)
     try:
-        return _call_model_fn(_model_config_meta[model], prompt, max_tokens, timeout)
+        return _call_model_fn(_model_config_meta[model], prompt, max_tokens, timeout,
+                              role_description)
     except Exception as e:  # noqa: BLE001 - we want a simple wrapper
         raise RuntimeError(f"Error calling model '{model}': {e}") from e
 
