@@ -67,7 +67,7 @@ with `is_available()` per interface or `check_cli_availability()`.
 ```bash
 # Core (stdlib-only; the CLI backends and the whole import surface work
 # with zero third-party packages installed):
-pip install git+https://github.com/EdwardAThomson/llm-backends@v0.1.1
+pip install git+https://github.com/EdwardAThomson/llm-backends@v0.2.0
 
 # With provider SDKs as needed:
 pip install "llm-backends[openai]"     # OpenAI / hosted-llm / OpenRouter / Venice
@@ -103,6 +103,15 @@ check_cli_availability()               # {"codex": bool, "gemini-cli": bool, "cl
 text = CodexInterface().generate("...", timeout=120)
 ```
 
+No system prompt is sent unless you ask for one. Since 0.2.0,
+`role_description` defaults to `None` on the API backend (no `system` turn at
+all), so a bare `send_prompt(...)` ships no persona. Pass `role_description=`
+to `send_prompt(...)` / `MultiProviderInterface(...)` /
+`initialize_llm(backend="api", ...)` to set one; the exported `FICTION_ROLE`
+restores the pre-0.2.0 fiction-writing persona in one line. On the CLI-agent
+backends (which have no system-prompt concept) passing `role_description` to
+`initialize_llm` raises `RuntimeError`.
+
 Environment variables are read lazily and this package never loads
 `.env` itself: apps own their own dotenv loading.
 
@@ -114,7 +123,8 @@ Environment variables are read lazily and this package never loads
   suite runs in a venv containing only `pytest`.
 - **Versioned behavioral defaults:** registry contents, per-model
   `max_tokens` / `temperature` defaults, the default `role_description`
-  strings, retry counts, and timeout defaults are part of the versioned
+  (`None` since 0.2.0, i.e. no system prompt), retry counts, and timeout defaults
+  are part of the versioned
   contract. Any change to them is at least a minor version bump with a
   changelog entry. (Downstream benchmark repos pin exact tags and verify
   request payloads on upgrade.)
